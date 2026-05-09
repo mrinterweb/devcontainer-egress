@@ -103,13 +103,24 @@ Add the following to any project's `.devcontainer/devcontainer.json`:
     "HTTPS_PROXY": "http://squid:3128",
     "HTTP_PROXY":  "http://squid:3128",
     "NO_PROXY":    "localhost,127.0.0.1"
-  }
+  },
+  "mounts": [
+    // Mount the egress skill into the container so Claude Code (and other
+    // agents that read the skill format) recognize blocked requests and
+    // ask the user to run `egress add` on the host instead of trying
+    // workarounds. Adjust the source path if you cloned this repo
+    // somewhere other than ~/devcontainer-egress.
+    "source=${localEnv:HOME}/devcontainer-egress/agent/skills/devcontainer-egress,target=/home/vscode/.claude/skills/devcontainer-egress,type=bind,readonly"
+  ]
 }
 ```
 
 The Dockerfile is whatever the project needs (language toolchain plus any agent
 CLIs). The egress wiring is identical across projects, so any number of
 devcontainers can share the same proxy and allowlist.
+
+If your container's `remoteUser` is not `vscode`, change `/home/vscode/` in
+the mount target to that user's home directory.
 
 ## Connecting a plain container
 
@@ -170,7 +181,10 @@ the `egress` command — when to add a host, how to read the access log, and how
 to behave when running inside a sandboxed container that can't run `egress`
 itself.
 
-Install it with a symlink into your Claude config dir:
+There are two places to install it, for two different audiences:
+
+**Host-side Claude Code** (running on your laptop, can act on the skill
+directly). Symlink into your host Claude config dir:
 
 ```sh
 egress install-skill            # symlinks into ~/.claude/skills/
@@ -178,6 +192,11 @@ egress uninstall-skill          # remove the symlink
 ```
 
 Honors `$CLAUDE_CONFIG_DIR` if you've set one; otherwise targets `~/.claude`.
+
+**Container-side Claude Code** (running inside a sandboxed devcontainer,
+can't act but learns to recognize denials and ask the user). Add the
+`mounts` entry shown in [Connecting a devcontainer](#connecting-a-devcontainer)
+above to mount the skill into the container's `~/.claude/skills/`.
 
 ## How it works
 
