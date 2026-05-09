@@ -1,0 +1,22 @@
+# devcontainer-egress allowlist
+#
+# One hostname per line. Leading dot matches the host and all subdomains.
+# Lines starting with `#` are comments. Blank lines are ignored.
+#
+# After editing, apply with: egress reload
+
+# LLM provider APIs
+.anthropic.com
+.openai.com
+.openrouter.ai
+
+# Source / version control
+.github.com
+.githubusercontent.com
+.githubassets.com
+
+# Package registries
+.npmjs.org
+.pypi.org
+.pythonhosted.org
+.rubygems.org

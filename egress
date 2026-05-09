@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# Manage the devcontainer egress proxy stack.
+# Works on macOS and Linux (any system with Docker + Bash 3.2+).
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/compose.yml"
+DEFAULTS_DIR="$SCRIPT_DIR/defaults"
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/devcontainer-egress"
+ALLOWLIST="$CONFIG_DIR/allowlist.txt"
+
+PROXY_HOST="squid"
+PROXY_PORT="3128"
+NETWORK="egress-agents"
+CONTAINER="egress-squid"
+
+usage() {
+  cat <<EOF
+Usage: egress <command>
+
+Commands:
+  up        Start the egress proxy (idempotent; bootstraps allowlist on first run)
+  down      Stop and remove the egress proxy and its networks
+  restart   Restart Squid (full container restart)
+  reload    Reload Squid config without dropping connections (after editing allowlist)
+  status    Show the proxy's status
+  logs      Tail the Squid access log
+  test      Run allow / deny / bypass smoke tests
+  edit      Open the allowlist in \$EDITOR
+  config    Print the path to the user allowlist
+  help      Show this help
+
+User allowlist: $ALLOWLIST
+
+Any devcontainer or 'docker run' joins this proxy with:
+  --network=$NETWORK -e HTTPS_PROXY=http://$PROXY_HOST:$PROXY_PORT
+EOF
+}
+
+require_docker() {
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "error: docker not found on PATH" >&2
+    exit 1
+  fi
+}
+
+bootstrap_allowlist() {
+  if [ ! -f "$ALLOWLIST" ]; then
+    mkdir -p "$CONFIG_DIR"
+    cp "$DEFAULTS_DIR/allowlist.txt" "$ALLOWLIST"
+    echo "Created allowlist at $ALLOWLIST (from defaults)."
+    echo "Edit with: egress edit"
+  fi
+}
+
+# Compose interpolates ${HOME} for the bind mount. Fail fast if the resolved
+# allowlist path doesn't exist (compose otherwise creates it as an empty dir).
+require_allowlist() {
+  if [ ! -f "$ALLOWLIST" ]; then
+    echo "error: allowlist not found at $ALLOWLIST" >&2
+    echo "       run 'egress up' to bootstrap it from defaults." >&2
+    exit 1
+  fi
+}
+
+cmd_up() {
+  bootstrap_allowlist
+  docker compose -f "$COMPOSE_FILE" up -d
+}
+
+cmd_down()    { docker compose -f "$COMPOSE_FILE" down; }
+cmd_restart() { require_allowlist; docker compose -f "$COMPOSE_FILE" restart squid; }
+cmd_reload()  { docker exec "$CONTAINER" squid -k reconfigure; echo "reloaded"; }
+cmd_status()  { docker compose -f "$COMPOSE_FILE" ps; }
+cmd_logs()    { docker exec "$CONTAINER" tail -f /var/log/squid/access.log; }
+cmd_edit()    { bootstrap_allowlist; "${EDITOR:-vi}" "$ALLOWLIST"; }
+cmd_config()  { echo "$ALLOWLIST"; }
+
+cmd_test() {
+  local allowed_host="${1:-api.anthropic.com}"
+  local denied_host="${2:-example.com}"
+
+  echo "=== allowed ($allowed_host) ==="
+  docker run --rm --network "$NETWORK" \
+    -e HTTPS_PROXY="http://$PROXY_HOST:$PROXY_PORT" \
+    curlimages/curl -sI "https://$allowed_host" \
+      -o /dev/null -w 'HTTP %{http_code}\n' || true
+
+  echo "=== denied ($denied_host) ==="
+  docker run --rm --network "$NETWORK" \
+    -e HTTPS_PROXY="http://$PROXY_HOST:$PROXY_PORT" \
+    curlimages/curl -sI --max-time 4 "https://$denied_host" \
+      -o /dev/null -w 'HTTP %{http_code}\n' 2>/dev/null || echo "(refused)"
+
+  echo "=== bypass attempt (raw IP, no proxy) ==="
+  docker run --rm --network "$NETWORK" \
+    curlimages/curl -sS --max-time 3 https://1.1.1.1 -o /dev/null 2>&1 | tail -1 || true
+}
+
+require_docker
+case "${1:-help}" in
+  up)              cmd_up ;;
+  down)            cmd_down ;;
+  restart)         cmd_restart ;;
+  reload)          cmd_reload ;;
+  status|ps)       cmd_status ;;
+  logs)            cmd_logs ;;
+  test)            shift; cmd_test "$@" ;;
+  edit)            cmd_edit ;;
+  config)          cmd_config ;;
+  -h|--help|help)  usage ;;
+  *) echo "unknown command: $1" >&2; usage >&2; exit 1 ;;
+esac

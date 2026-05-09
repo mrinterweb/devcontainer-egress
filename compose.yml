@@ -1,0 +1,40 @@
+# Pinned so this stack is recognized regardless of which directory the
+# compose file lives in.
+name: egress
+
+# Egress proxy stack. `egress-agents` is an --internal network with no NAT
+# to the public internet; `egress-proxy-out` bridges Squid to the outside.
+# Squid is the only multi-homed member, so containers placed on
+# `egress-agents` can reach the internet only via Squid (which enforces
+# the allowlist). A process that ignores HTTPS_PROXY and dials a raw IP
+# from `egress-agents` will get connection-refused.
+#
+# The user-managed allowlist is at ~/.config/devcontainer-egress/allowlist.txt
+# and is bind-mounted into Squid at /etc/squid/allowlist.txt. The `egress`
+# wrapper script ensures it exists (bootstrapping from defaults/) before bringing
+# the stack up.
+
+services:
+  squid:
+    image: ubuntu/squid:latest
+    container_name: egress-squid
+    hostname: squid
+    restart: unless-stopped
+    networks:
+      - agents
+      - proxy-out
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+      - ${HOME}/.config/devcontainer-egress/allowlist.txt:/etc/squid/allowlist.txt:ro
+    healthcheck:
+      test: ["CMD", "squid", "-k", "check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+networks:
+  agents:
+    name: egress-agents
+    internal: true
+  proxy-out:
+    name: egress-proxy-out
