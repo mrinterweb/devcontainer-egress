@@ -17,6 +17,11 @@ PROXY_PORT="3128"
 NETWORK="egress-agents"
 CONTAINER="egress-squid"
 
+SKILL_NAME="devcontainer-egress"
+SKILL_SRC="$REPO_DIR/agent/skills/$SKILL_NAME"
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+SKILL_DEST="$CLAUDE_DIR/skills/$SKILL_NAME"
+
 usage() {
   cat <<EOF
 Usage: egress <command>
@@ -32,6 +37,8 @@ Commands:
   add       Append one or more domains to the allowlist and reload
   edit      Open the allowlist in \$EDITOR
   config    Print the path to the user allowlist
+  install-skill    Symlink the Claude Code skill into \$CLAUDE_CONFIG_DIR/skills/
+  uninstall-skill  Remove that symlink
   help      Show this help
 
 User allowlist: $ALLOWLIST
@@ -79,6 +86,68 @@ cmd_status()  { docker compose -f "$COMPOSE_FILE" ps; }
 cmd_logs()    { docker exec "$CONTAINER" tail -f /var/log/squid/access.log; }
 cmd_edit()    { bootstrap_allowlist; "${EDITOR:-vi}" "$ALLOWLIST"; }
 cmd_config()  { echo "$ALLOWLIST"; }
+
+# True if $SKILL_DEST is a symlink whose canonical target equals $SKILL_SRC's
+# canonical path. Handles relative vs absolute symlinks by resolving both.
+_skill_dest_points_at_src() {
+  [ -L "$SKILL_DEST" ] || return 1
+  local resolved src_resolved
+  resolved="$(cd "$SKILL_DEST" 2>/dev/null && pwd -P)" || return 1
+  src_resolved="$(cd "$SKILL_SRC" 2>/dev/null && pwd -P)" || return 1
+  [ "$resolved" = "$src_resolved" ]
+}
+
+cmd_install_skill() {
+  if [ ! -d "$SKILL_SRC" ]; then
+    echo "error: skill source not found at $SKILL_SRC" >&2
+    exit 1
+  fi
+
+  mkdir -p "$(dirname "$SKILL_DEST")"
+
+  if [ -L "$SKILL_DEST" ]; then
+    if _skill_dest_points_at_src; then
+      echo "already installed: $SKILL_DEST -> $SKILL_SRC"
+      return 0
+    fi
+    local current
+    current="$(readlink "$SKILL_DEST")"
+    echo "error: $SKILL_DEST is a symlink to '$current'." >&2
+    echo "       remove it first if you want to install ours:" >&2
+    echo "         rm '$SKILL_DEST'" >&2
+    exit 1
+  elif [ -e "$SKILL_DEST" ]; then
+    echo "error: $SKILL_DEST already exists and is not a symlink." >&2
+    echo "       remove it first if you want to install." >&2
+    exit 1
+  fi
+
+  ln -s "$SKILL_SRC" "$SKILL_DEST"
+  echo "installed: $SKILL_DEST -> $SKILL_SRC"
+}
+
+cmd_uninstall_skill() {
+  if [ ! -L "$SKILL_DEST" ] && [ ! -e "$SKILL_DEST" ]; then
+    echo "not installed: $SKILL_DEST"
+    return 0
+  fi
+
+  if [ ! -L "$SKILL_DEST" ]; then
+    echo "error: $SKILL_DEST exists but is not a symlink; refusing to remove." >&2
+    exit 1
+  fi
+
+  if ! _skill_dest_points_at_src; then
+    local current
+    current="$(readlink "$SKILL_DEST")"
+    echo "error: $SKILL_DEST is a symlink to '$current' (not ours)." >&2
+    echo "       remove it manually if you really want to." >&2
+    exit 1
+  fi
+
+  rm "$SKILL_DEST"
+  echo "removed: $SKILL_DEST"
+}
 
 cmd_add() {
   if [ $# -eq 0 ]; then
@@ -169,6 +238,8 @@ case "${1:-help}" in
   add)             shift; cmd_add "$@" ;;
   edit)            cmd_edit ;;
   config)          cmd_config ;;
+  install-skill)   cmd_install_skill ;;
+  uninstall-skill) cmd_uninstall_skill ;;
   -h|--help|help)  usage ;;
   *) echo "unknown command: $1" >&2; usage >&2; exit 1 ;;
 esac

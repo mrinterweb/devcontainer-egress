@@ -78,6 +78,8 @@ egress test      Smoke-test allow / deny / bypass
 egress add       Append domains to the allowlist and reload
 egress edit      Open the allowlist in $EDITOR
 egress config    Print the path to the user allowlist
+egress install-skill    Symlink the Claude Code skill into ~/.claude/skills/
+egress uninstall-skill  Remove that symlink
 egress help      Show this help
 ```
 
@@ -159,6 +161,23 @@ For larger edits or to remove entries, use `egress edit` followed by
 Run `egress logs` in another terminal while debugging — it shows
 `TCP_TUNNEL/200` for allowed CONNECTs and `TCP_DENIED/403` for blocked ones,
 with the target host on each line.
+
+## Claude Code skill
+
+A skill at [`agent/skills/devcontainer-egress/`](./agent/skills/devcontainer-egress)
+teaches Claude Code (and other agents that read the skill format) how to use
+the `egress` command — when to add a host, how to read the access log, and how
+to behave when running inside a sandboxed container that can't run `egress`
+itself.
+
+Install it with a symlink into your Claude config dir:
+
+```sh
+egress install-skill            # symlinks into ~/.claude/skills/
+egress uninstall-skill          # remove the symlink
+```
+
+Honors `$CLAUDE_CONFIG_DIR` if you've set one; otherwise targets `~/.claude`.
 
 ## How it works
 
