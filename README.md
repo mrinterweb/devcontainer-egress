@@ -181,15 +181,14 @@ Honors `$CLAUDE_CONFIG_DIR` if you've set one; otherwise targets `~/.claude`.
 
 ## How it works
 
-```
-┌──────────────────────────┐       ┌──────────────┐       ┌──────────────┐
-│ container                │       │ egress-squid │       │  Internet    │
-│ HTTPS_PROXY=squid:3128   │ ────▶ │ (allowlist)  │ ────▶ │ (allowlisted │
-│ network: egress-agents   │       │              │       │  domains)    │
-└──────────────────────────┘       │ networks:    │       └──────────────┘
-                                   │  egress-agents (--internal)
-                                   │  egress-proxy-out
-                                   └──────────────┘
+```mermaid
+flowchart LR
+    container["Container<br/>HTTPS_PROXY=squid:3128<br/>network: egress-agents"]
+    squid["egress-squid<br/>(allowlist proxy)<br/><br/>networks:<br/>• egress-agents (--internal)<br/>• egress-proxy-out"]
+    internet(["Internet<br/>(allowlisted domains only)"])
+
+    container -->|"CONNECT host:443"| squid
+    squid -->|"allowed"| internet
 ```
 
 `egress up` creates two Docker networks and a Squid container:
