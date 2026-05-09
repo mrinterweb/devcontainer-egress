@@ -75,6 +75,7 @@ egress restart   Restart Squid (full container restart)
 egress status    Show stack status
 egress logs      Tail the Squid access log live
 egress test      Smoke-test allow / deny / bypass
+egress add       Append domains to the allowlist and reload
 egress edit      Open the allowlist in $EDITOR
 egress config    Print the path to the user allowlist
 egress help      Show this help
@@ -142,12 +143,18 @@ leading dot matches all subdomains; `#` starts a comment:
 .pypi.org
 ```
 
-Edit and apply:
+The fastest way to add a domain is `egress add` — it normalizes input
+(stripping `https://` and paths), prepends a leading dot for subdomain match,
+de-dupes against existing entries, and reloads Squid in place:
 
 ```sh
-egress edit
-egress reload
+egress add slack.com                  # adds .slack.com, reloads
+egress add linear.app notion.com      # multiple at once
+egress add https://api.example.com/v1 # normalizes to .api.example.com
 ```
+
+For larger edits or to remove entries, use `egress edit` followed by
+`egress reload`.
 
 Run `egress logs` in another terminal while debugging — it shows
 `TCP_TUNNEL/200` for allowed CONNECTs and `TCP_DENIED/403` for blocked ones,

@@ -29,6 +29,7 @@ Commands:
   status    Show the proxy's status
   logs      Tail the Squid access log
   test      Run allow / deny / bypass smoke tests
+  add       Append one or more domains to the allowlist and reload
   edit      Open the allowlist in \$EDITOR
   config    Print the path to the user allowlist
   help      Show this help
@@ -79,6 +80,62 @@ cmd_logs()    { docker exec "$CONTAINER" tail -f /var/log/squid/access.log; }
 cmd_edit()    { bootstrap_allowlist; "${EDITOR:-vi}" "$ALLOWLIST"; }
 cmd_config()  { echo "$ALLOWLIST"; }
 
+cmd_add() {
+  if [ $# -eq 0 ]; then
+    cat >&2 <<EOF
+usage: egress add <domain> [<domain> ...]
+
+  Each <domain> is appended to the allowlist with a leading dot
+  (subdomain match) if it doesn't already have one. Existing entries
+  are skipped. Squid is reloaded automatically if it's running.
+
+  Examples:
+    egress add slack.com
+    egress add linear.app notion.com
+    egress add api.internal.example   # exact host: '.api.internal.example'
+EOF
+    exit 1
+  fi
+
+  bootstrap_allowlist
+
+  local added_any=0 raw domain
+  for raw in "$@"; do
+    domain="$raw"
+    domain="${domain#http://}"
+    domain="${domain#https://}"
+    domain="${domain%%/*}"
+    domain="${domain#\*.}"
+
+    if ! echo "$domain" | grep -Eq '^[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z0-9.-]*[a-zA-Z0-9]$'; then
+      echo "skipped: '$raw' doesn't look like a hostname" >&2
+      continue
+    fi
+
+    case "$domain" in
+      .*) ;;
+      *) domain=".$domain" ;;
+    esac
+
+    if grep -Fxq "$domain" "$ALLOWLIST"; then
+      echo "already present: $domain"
+      continue
+    fi
+
+    echo "$domain" >> "$ALLOWLIST"
+    echo "added: $domain"
+    added_any=1
+  done
+
+  if [ "$added_any" -eq 1 ]; then
+    if docker ps --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+      cmd_reload
+    else
+      echo "(Squid not running; changes apply on 'egress up')"
+    fi
+  fi
+}
+
 cmd_test() {
   local allowed_host="${1:-api.anthropic.com}"
   local denied_host="${2:-example.com}"
@@ -109,6 +166,7 @@ case "${1:-help}" in
   status|ps)       cmd_status ;;
   logs)            cmd_logs ;;
   test)            shift; cmd_test "$@" ;;
+  add)             shift; cmd_add "$@" ;;
   edit)            cmd_edit ;;
   config)          cmd_config ;;
   -h|--help|help)  usage ;;
