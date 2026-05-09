@@ -5,8 +5,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COMPOSE_FILE="$SCRIPT_DIR/compose.yml"
-DEFAULTS_DIR="$SCRIPT_DIR/defaults"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+COMPOSE_FILE="$REPO_DIR/compose.yml"
+DEFAULTS_DIR="$REPO_DIR/defaults"
 
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/devcontainer-egress"
 ALLOWLIST="$CONFIG_DIR/allowlist.txt"

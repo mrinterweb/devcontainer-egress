@@ -37,7 +37,21 @@ This project gives you:
 
 ```sh
 git clone https://github.com/<you>/devcontainer-egress ~/devcontainer-egress
-ln -s ~/devcontainer-egress/egress ~/.local/bin/egress   # or /usr/local/bin
+```
+
+Add the repo's `bin/` to your `PATH` so the `egress` command is available
+everywhere. For zsh:
+
+```sh
+echo 'export PATH="$HOME/devcontainer-egress/bin:$PATH"' >> ~/.zshrc
+exec zsh -l
+```
+
+For bash, replace `~/.zshrc` with `~/.bashrc` (Linux) or `~/.bash_profile` (macOS).
+
+Then bring the proxy up and verify:
+
+```sh
 egress up
 egress test
 ```
